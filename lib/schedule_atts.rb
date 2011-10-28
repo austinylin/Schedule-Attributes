@@ -2,16 +2,19 @@ require 'ice_cube'
 require 'active_support'
 require 'active_support/time_with_zone'
 require 'ostruct'
+require 'time'
 
 module ScheduleAtts
-  # Your code goes here...
+  
+  attr_accessor :schedule_data
+  
   DAY_NAMES = Date::DAYNAMES.map(&:downcase).map(&:to_sym)
   def schedule
     @schedule ||= begin
-      if schedule_yaml.blank?
+      if schedule_data.blank?
         IceCube::Schedule.new(Date.today.to_time).tap{|sched| sched.add_recurrence_rule(IceCube::Rule.daily) }
       else
-        IceCube::Schedule.from_yaml(schedule_yaml)
+        Marshal::load(schedule_data)
       end
     end
   end
@@ -19,16 +22,15 @@ module ScheduleAtts
   def schedule_attributes=(options)
     options = options.dup
     options[:interval] = options[:interval].to_i
+    options[:duration] = options[:duration].to_i if options.has_key?(:duration)
     options[:start_date] &&= ScheduleAttributes.parse_in_timezone(options[:start_date])
-    options[:date]       &&= ScheduleAttributes.parse_in_timezone(options[:date])
-    options[:until_date] &&= ScheduleAttributes.parse_in_timezone(options[:until_date])
-
+    options[:end_date]   &&= ScheduleAttributes.parse_in_timezone(options[:end_date])
+    
+    @schedule = IceCube::Schedule.new(options[:start_date])
+    @schedule.end_time = options[:end_date]
     if options[:repeat].to_i == 0
-      @schedule = IceCube::Schedule.new(options[:date])
-      @schedule.add_recurrence_date(options[:date])
+      @schedule.add_recurrence_date(options[:start_date])
     else
-      @schedule = IceCube::Schedule.new(options[:start_date])
-
       rule = case options[:interval_unit]
         when 'day'
           IceCube::Rule.daily options[:interval]
@@ -36,21 +38,20 @@ module ScheduleAtts
           IceCube::Rule.weekly(options[:interval]).day( *IceCube::DAYS.keys.select{|day| options[day].to_i == 1 } )
       end
 
-      rule.until(options[:until_date]) if options[:ends] == 'eventually'
-
       @schedule.add_recurrence_rule(rule)
     end
 
-    self.schedule_yaml = @schedule.to_yaml
+    self.schedule_data = Marshal::dump(@schedule)
   end
 
   def schedule_attributes
     atts = {}
 
     if rule = schedule.rrules.first
-      atts[:repeat]     = 1
-      atts[:start_date] = schedule.start_date.to_date
-      atts[:date]       = Date.today # for populating the other part of the form
+      atts[:repeat]       = 1
+      atts[:start_date]   = schedule.start_date
+      atts[:end_date]     = schedule.end_date
+      atts[:duration]     = schedule.duration
 
       rule_hash = rule.to_hash
       atts[:interval] = rule_hash[:interval]
@@ -65,16 +66,10 @@ module ScheduleAtts
         end
       end
 
-      if rule.until_date
-        atts[:until_date] = rule.until_date.to_date
-        atts[:ends] = 'eventually'
-      else
-        atts[:ends] = 'never'
-      end
     else
       atts[:repeat]     = 0
-      atts[:date]       = schedule.start_date.to_date
-      atts[:start_date] = Date.today # for populating the other part of the form
+      atts[:start_date] = schedule.start_date # for populating the other part of the form
+      atts[:duration]     = schedule.duration
     end
 
     OpenStruct.new(atts)
