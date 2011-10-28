@@ -23,8 +23,8 @@ module ScheduleAtts
     options = options.dup
     options[:interval] = options[:interval].to_i
     options[:duration] = options[:duration].to_i if options.has_key?(:duration)
-    options[:start_date] &&= ScheduleAttributes.parse_in_timezone(options[:start_date])
-    options[:end_date]   &&= ScheduleAttributes.parse_in_timezone(options[:end_date])
+    options[:start_date] = ScheduleAttributes.parse_in_timezone(options[:start_date]) unless options[:start_date].is_a?(Time) 
+    options[:end_date]   = ScheduleAttributes.parse_in_timezone(options[:end_date]) unless options[:end_date].is_a?(Time) 
     
     @schedule = IceCube::Schedule.new(options[:start_date])
     @schedule.end_time = options[:end_date]
